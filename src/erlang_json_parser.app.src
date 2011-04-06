@@ -1,0 +1,12 @@
+{application, erlang_json_parser,
+ [
+  {description, "A Simple Erlang-Json parser"},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { erlang_json_parser_app, []}},
+  {env, []}
+ ]}.

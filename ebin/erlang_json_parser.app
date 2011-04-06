@@ -1,0 +1,9 @@
+{application,erlang_json_parser,
+             [{description,[]},
+              {vsn,"1"},
+              {registered,[]},
+              {applications,[kernel,stdlib]},
+              {mod,{erlang_json_parser_app,[]}},
+              {env,[]},
+              {modules,[erlang_json_parser_app,erlang_json_parser_sup,json,
+                        json_generator,json_parser]}]}.

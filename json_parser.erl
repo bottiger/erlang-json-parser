@@ -2,12 +2,12 @@
 -module(json_parser).
 
 %% API
--export([parse/1, test/0]).
+-export([load/1, test/0, hex_to_int/1]).
 
-%% @doc Parse a full value (no unparsed rest is allowed)
--spec parse(JSON :: string()) -> {ok, term()}.
-parse(JSON) ->
-    case parse_term(strip(JSON)) of
+%% @doc Load a full value (no unloadd rest is allowed)
+-spec load(JSON :: string()) -> {ok, term()}.
+load(JSON) ->
+    case load_term(strip(JSON)) of
         {ok, Type, {Term, Rest}} ->
             Rest2 = strip(Rest),
             if
@@ -19,10 +19,10 @@ parse(JSON) ->
             {error, Type, {State, Term, Rest}}
     end.
 
-%% @doc Parse a partial value (unparsed rest is allowed)
--spec parse_part(JSON :: string()) -> {ok, Type :: atom(), {Term :: term(), Rest :: string()}}.
-parse_part(JSON) ->
-    parse_term(strip(JSON)).
+%% @doc Load a partial value (unloadd rest is allowed)
+-spec load_part(JSON :: string()) -> {ok, Type :: atom(), {Term :: term(), Rest :: string()}}.
+load_part(JSON) ->
+    load_term(strip(JSON)).
 
 
 %% @doc Strip leading whitespace
@@ -31,159 +31,172 @@ strip(S) ->
     lists:dropwhile(
       fun(C) -> lists:member(C, [9, 10, 13, 32]) end, S).
 
+%% @doc Convert hex to int
+-spec hex_to_int(H :: string(), N :: integer()) -> integer().
+hex_to_int([C], N) ->
+    if
+        $0 =< C andalso C =< $9 -> N * 16 + (C - $0);
+        $a =< C andalso C =< $f -> N * 16 + (C - $a + 10)
+    end;
+hex_to_int([C|Rest], N) ->
+    hex_to_int(Rest, hex_to_int([C], N)).
 
-%% @doc Parse the first JSON value to an Erlang term
+hex_to_int(H) ->
+    hex_to_int(H, 0).
+
+
+%% @doc Load the first JSON value to an Erlang term
 % Atoms
--spec parse_term(JSON :: string()) -> term().
-parse_term([$t, $r, $u, $e|Rest]) ->
+-spec load_term(JSON :: string()) -> term().
+load_term([$t, $r, $u, $e|Rest]) ->
     {ok, bool, {true, Rest}};
-parse_term([$f, $a, $l, $s, $e|Rest]) ->
+load_term([$f, $a, $l, $s, $e|Rest]) ->
     {ok, bool, {false, Rest}};
-parse_term([$n, $u, $l, $l|Rest]) ->
+load_term([$n, $u, $l, $l|Rest]) ->
     {ok, null, {null, Rest}};
 % String
-parse_term([34|Rest]) ->
-    parse_string(Rest);
+load_term([34|Rest]) ->
+    load_string(Rest);
 % Number
-parse_term([N|Rest]) when ($0 =< N andalso N =< $9)
+load_term([N|Rest]) when ($0 =< N andalso N =< $9)
                           orelse N == $+ orelse N == $- ->
-    parse_number([N|Rest]);
+    load_number([N|Rest]);
 % List
-parse_term([$[|Rest]) ->
-    parse_list(first, strip(Rest), []);
+load_term([$[|Rest]) ->
+    load_list(first, strip(Rest), []);
 % Dict
-parse_term([${|Rest]) ->
-    parse_dict(first, strip(Rest), dict:new());
+load_term([${|Rest]) ->
+    load_dict(first, strip(Rest), dict:new());
 % Catch all - error
-parse_term(JSON) ->
+load_term(JSON) ->
     {error, unknown_term, {JSON}}.
 
 
-%% @doc Parse a JSON string-value
--spec(parse_string(JSON :: string(), String :: list()) -> binary()).
+%% @doc Load a JSON string-value
+-spec(load_string(JSON :: string(), String :: list()) -> binary()).
 % Quote
-parse_string([$\\, 34|Rest], S) ->
-    parse_string(Rest, [34|S]);
+load_string([$\\, 34|Rest], S) ->
+    load_string(Rest, [34|S]);
 % Reverse Solidus
-parse_string([$\\, $\\|Rest], S) ->
-    parse_string(Rest, [$\\|S]);
+load_string([$\\, $\\|Rest], S) ->
+    load_string(Rest, [$\\|S]);
 % Solidus
-parse_string([$\\, $/|Rest], S) ->
-    parse_string(Rest, [$/|S]);
+load_string([$\\, $/|Rest], S) ->
+    load_string(Rest, [$/|S]);
 % Backspace
-parse_string([$\\, $b|Rest], S) ->
-    parse_string(Rest, [8|S]);
+load_string([$\\, $b|Rest], S) ->
+    load_string(Rest, [8|S]);
 % Form feed
-parse_string([$\\, $f|Rest], S) ->
-    parse_string(Rest, [12|S]);
+load_string([$\\, $f|Rest], S) ->
+    load_string(Rest, [12|S]);
 % Line feed
-parse_string([$\\, $n|Rest], S) ->
-    parse_string(Rest, [10|S]);
+load_string([$\\, $n|Rest], S) ->
+    load_string(Rest, [10|S]);
 % Carriage return
-parse_string([$\\, $r|Rest], S) ->
-    parse_string(Rest, [13|S]);
+load_string([$\\, $r|Rest], S) ->
+    load_string(Rest, [13|S]);
 % Tab
-parse_string([$\\, $t|Rest], S) ->
-    parse_string(Rest, [9|S]);
+load_string([$\\, $t|Rest], S) ->
+    load_string(Rest, [9|S]);
 % Unicode
-parse_string([$\\, $u, A, B, C, D|Rest], S) ->
-    parse_string(Rest, [hex:hex_to_int([A, B, C, D])|S]);
+load_string([$\\, $u, A, B, C, D|Rest], S) ->
+    load_string(Rest, [hex_to_int([A, B, C, D])|S]);
 % Qoute end
-parse_string([34|Rest], S) ->
+load_string([34|Rest], S) ->
     {ok, string, {unicode:characters_to_binary(lists:reverse(S), utf8), Rest}};
 % Other
-parse_string([C|Rest], S) ->
-    parse_string(Rest, [C|S]);
+load_string([C|Rest], S) ->
+    load_string(Rest, [C|S]);
 % Catch all - error
-parse_string("", S) ->
+load_string("", S) ->
     {error, unclosed_string, {string, lists:reverse(S), ""}}.
 % Bootstrap
-parse_string(S) ->
-    parse_string(S, "").
+load_string(S) ->
+    load_string(S, "").
 
-%% @doc Parse a JSON number (e.g. 17 or -12.801e7)
-parse_number(first, [$0,$.|Rest], Sgn) ->
-    parse_float(frac_first, Rest, [$., $0|Sgn]);
+%% @doc Load a JSON number (e.g. 17 or -12.801e7)
+load_number(first, [$0,$.|Rest], Sgn) ->
+    load_float(frac_first, Rest, [$., $0|Sgn]);
 
-parse_number(first, [$0|Rest], _Sgn) ->
+load_number(first, [$0|Rest], _Sgn) ->
     {ok, int, {0, Rest}};
 
-parse_number(first, [C|Rest], Sgn) when $1 =< C andalso C =< $9 ->
-    parse_number(mid, Rest, [C|Sgn]);
+load_number(first, [C|Rest], Sgn) when $1 =< C andalso C =< $9 ->
+    load_number(mid, Rest, [C|Sgn]);
 
-parse_number(mid, [C|Rest], Int) when $0 =< C andalso C =< $9 ->
-    parse_number(mid, Rest, [C|Int]);
+load_number(mid, [C|Rest], Int) when $0 =< C andalso C =< $9 ->
+    load_number(mid, Rest, [C|Int]);
 
-parse_number(mid, [$.|Rest], Int) ->
-    parse_float(frac_first, Rest, [$.|Int]);
+load_number(mid, [$.|Rest], Int) ->
+    load_float(frac_first, Rest, [$.|Int]);
 
-parse_number(mid, Rest, Int) ->
+load_number(mid, Rest, Int) ->
     {ok, int, {list_to_integer(lists:reverse(Int)), Rest}}.
 
-parse_number([$+|N]) ->
-    parse_number(first, N, "");
+load_number([$+|N]) ->
+    load_number(first, N, "");
 
-parse_number([$-|N]) ->
-    parse_number(first, N, "-");
+load_number([$-|N]) ->
+    load_number(first, N, "-");
 
-parse_number(N) ->
-    parse_number(first, N, "").
+load_number(N) ->
+    load_number(first, N, "").
 
-%% @doc Parse a JSON number with a fractional part (e.g. -12.801e7)
--spec(parse_float(Type :: atom(), Rest :: list(), Float :: list()) -> float()).
-parse_float(Type, [C|Rest], Float) when (Type == frac orelse Type == frac_first) andalso
+%% @doc Load a JSON number with a fractional part (e.g. -12.801e7)
+-spec(load_float(Type :: atom(), Rest :: list(), Float :: list()) -> float()).
+load_float(Type, [C|Rest], Float) when (Type == frac orelse Type == frac_first) andalso
                                         $0 =< C andalso C =< $9 ->
-    parse_float(frac, Rest, [C|Float]);
+    load_float(frac, Rest, [C|Float]);
 
-parse_float(frac, [C|Rest], Float) when C == $e orelse C == $E ->
-    parse_float(exp_first, Rest, [$e|Float]);
+load_float(frac, [C|Rest], Float) when C == $e orelse C == $E ->
+    load_float(exp_first, Rest, [$e|Float]);
 
-parse_float(exp_first, [C|Rest], Float) when $0 =< C andalso C =< $9 ->
-    parse_float(exp, Rest, [C|Float]);
+load_float(exp_first, [C|Rest], Float) when $0 =< C andalso C =< $9 ->
+    load_float(exp, Rest, [C|Float]);
 
-parse_float(exp, [C|Rest], Float) when $0 =< C andalso C =< $9 ->
-    parse_float(exp, Rest, [C|Float]);
+load_float(exp, [C|Rest], Float) when $0 =< C andalso C =< $9 ->
+    load_float(exp, Rest, [C|Float]);
 
-parse_float(Type, Rest, Float) when Type == frac orelse Type == exp ->
+load_float(Type, Rest, Float) when Type == frac orelse Type == exp ->
     {ok, float, {list_to_float(lists:reverse(Float)), Rest}};
 
 % Catch all
-parse_float(Type, Rest, Float) ->
+load_float(Type, Rest, Float) ->
     {error, invalid_float, {Type, lists:reverse(Float), Rest}}.
 
 
-%% @doc Parse a JSON list
--spec(parse_list(State :: atom(), Rest :: list(), List :: list()) -> list()).
-parse_list(_State, [$]|Rest], List) ->
+%% @doc Load a JSON list
+-spec(load_list(State :: atom(), Rest :: list(), List :: list()) -> list()).
+load_list(_State, [$]|Rest], List) ->
     {ok, list, {lists:reverse(List), Rest}};
 
-parse_list(mid, [$,|Rest], List) ->
-    {ok, _Type, {Term, NewRest}} = parse_part(Rest),
+load_list(mid, [$,|Rest], List) ->
+    {ok, _Type, {Term, NewRest}} = load_part(Rest),
     NewList = [Term|List],
-    parse_list(mid, strip(NewRest), NewList);
+    load_list(mid, strip(NewRest), NewList);
 
-parse_list(first, [C|Rest], List) when C /= $, ->
-    parse_list(mid, [$,,C|Rest], List);
+load_list(first, [C|Rest], List) when C /= $, ->
+    load_list(mid, [$,,C|Rest], List);
 
-parse_list(State, Rest, List) ->
+load_list(State, Rest, List) ->
     {error, invalid_list, {State, lists:reverse(List), Rest}}.
 
 
-%% @doc Parse a JSON dict
--spec(parse_dict(State :: atom(), Rest :: list(), Dict :: dict()) -> dict()).
-parse_dict(_State, [$}|Rest], Dict) ->
+%% @doc Load a JSON dict
+-spec(load_dict(State :: atom(), Rest :: list(), Dict :: dict()) -> dict()).
+load_dict(_State, [$}|Rest], Dict) ->
     {ok, dict, {Dict, Rest}};
 
-parse_dict(mid, [$,|Rest], Dict) ->
-    {ok, string, {Key, Rest2}} = parse_part(Rest),
+load_dict(mid, [$,|Rest], Dict) ->
+    {ok, string, {Key, Rest2}} = load_part(Rest),
     [$:|Rest3] = strip(Rest2),
-    {ok, _Type, {Value, Rest4}} = parse_part(Rest3),
-    parse_dict(mid, strip(Rest4), dict:store(Key, Value, Dict));
+    {ok, _Type, {Value, Rest4}} = load_part(Rest3),
+    load_dict(mid, strip(Rest4), dict:store(Key, Value, Dict));
 
-parse_dict(first, [C|Rest], Dict) when C /= $, ->
-    parse_dict(mid, [$,,C|Rest], Dict);
+load_dict(first, [C|Rest], Dict) when C /= $, ->
+    load_dict(mid, [$,,C|Rest], Dict);
 
-parse_dict(State, Rest, Dict) ->
+load_dict(State, Rest, Dict) ->
     {error, invalid_dict, {State, Dict, Rest}}.
 
 
@@ -211,7 +224,7 @@ test() ->
         }
     }
 }",
-    {ok, _Dict} = parse(JSON),
+    {ok, _Dict} = load(JSON),
     JSON2 = "{\"widget\": {
     \"debug\": \"on\",
     \"window\": {
@@ -238,7 +251,7 @@ test() ->
         \"onMouseUp\": \"sun1.opacity = (sun1.opacity / 100) * 90;\"
     }
 }}",
-    {ok, _Dict2} = parse(JSON2),
+    {ok, _Dict2} = load(JSON2),
     JSON3 = "{\"web-app\": {
   \"servlet\": [
     {
@@ -327,7 +340,7 @@ test() ->
   \"taglib\": {
     \"taglib-uri\": \"cofax.tld\",
     \"taglib-location\": \"/WEB-INF/tlds/cofax.tld\"}}}",
-    {ok, _Dict3} = parse(JSON3),
+    {ok, _Dict3} = load(JSON3),
     JSON4 = "{\"menu\": {
     \"header\": \"SVG Viewer\",
     \"items\": [
@@ -355,5 +368,5 @@ test() ->
         {\"id\": \"About\", \"label\": \"About Adobe CVG Viewer...\"}
     ]
 }}",
-    {ok, _Dict4} = parse(JSON4),
+    {ok, _Dict4} = load(JSON4),
     true.

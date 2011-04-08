@@ -154,6 +154,10 @@ load_float(frac, [C|Rest], Float) when C == $e orelse C == $E ->
 load_float(exp_first, [C|Rest], Float) when $0 =< C andalso C =< $9 ->
     load_float(exp, Rest, [C|Float]);
 
+load_float(exp_first, [S,C|Rest], Float) when (S == $+ orelse S == $-)
+                                              andalso ($0 =< C andalso C =< $9) ->
+    load_float(exp, Rest, [C,S|Float]);
+
 load_float(exp, [C|Rest], Float) when $0 =< C andalso C =< $9 ->
     load_float(exp, Rest, [C|Float]);
 
